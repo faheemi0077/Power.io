@@ -36,7 +36,6 @@ Request includes:
 - PowerPoint template file
 - One or more data files
 - Chart instructions
-- API key authentication
 
 Response:
 
@@ -49,3 +48,15 @@ Response:
 - pandas
 - python-pptx
 - Mistral AI API
+
+## Project Structure
+
+- `backend/` FastAPI service (deployed on Render). Needs `MISTRAL_API_KEY` set in its environment.
+- `frontend/` Next.js app (deployed on Vercel). Set `NEXT_PUBLIC_BACKEND_URL` to the backend URL.
+
+Run locally:
+
+```
+cd backend && pip install -r requirements.txt && uvicorn main:app --reload
+cd frontend && pnpm install && pnpm dev
+```

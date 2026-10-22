@@ -12,6 +12,50 @@ import json
 import urllib.request
 import urllib.error
 
+def _safe_slide_title(slide):
+    """Return the slide's title shape, or None if it has none."""
+    try:
+        return slide.shapes.title if slide.shapes.title else None
+    except Exception:
+        return None
+
+
+def _guess_slide_type(slide, slide_shape_count, has_chart=False, has_image=False, has_title=False):
+    """Rough slide classification used by count_theme()."""
+    if has_title and slide_shape_count <= 3 and not has_chart and not has_image:
+        return "title_slide"
+    if has_chart:
+        return "chart_slide"
+    if has_image:
+        return "image_slide"
+    return "content_slide"
+
+
+def apply_instructions(presentation, instruction_objects):
+    """Insert one chart per instruction, then style every new chart to match the deck theme."""
+    charts = []
+    for inst in instruction_objects:
+        slide_number = int(inst["slide_number"])
+        if slide_number < 1 or slide_number > len(presentation.slides):
+            raise ValueError(
+                f"Slide {slide_number} doesn't exist, the presentation has {len(presentation.slides)} slides"
+            )
+        chart = generate_chart(presentation, slide_number, inst["chart_type"])
+        clean = interpret_data(inst["dataframe"], chart_type=inst["chart_type"])
+        add_data(chart, clean)
+        charts.append(chart)
+
+    # Theme styling is a finishing touch, so a failure here shouldn't lose the charts.
+    try:
+        interpretation = get_interpretation(count_theme(presentation))
+        for chart in charts:
+            style_chart(chart, interpretation)
+    except Exception as e:
+        print(f"Theme styling skipped: {e}")
+
+    return presentation
+
+
 #raw chart generation
 #generating the raw chart was succesful
 def generate_chart(presentation, slide_number, chart_type, left=Inches(1), top=Inches(1.5), width=Inches(6), height=Inches(4)):

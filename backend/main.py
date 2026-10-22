@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, Header, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
 import pandas as pd
 import tempfile
@@ -7,15 +7,14 @@ import json
 from typing import List
 from pptx import Presentation
 from fastapi.middleware.cors import CORSMiddleware
-
-API_KEY = os.getenv("POWERIO_API_KEY")
+from utils import apply_instructions
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -27,14 +26,10 @@ def read_root():
 @app.post("/process")
 async def process_files(
     background_tasks: BackgroundTasks,
-    api_key: str = Header(None, alias="X-API-KEY"),
     pptxFile: UploadFile = File(...),
     dataFiles: List[UploadFile] = File(...),
     instructions: str = Form(...)
 ):
-    if api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
     pptx_temp = None
     data_temps = []
     output_temp = None
@@ -86,6 +81,9 @@ async def process_files(
             instruction_objects.append(instruction_obj)
         
         
+        # Insert and style the charts
+        apply_instructions(prs, instruction_objects)
+
         # Create output temporary file
         output_temp = tempfile.NamedTemporaryFile(delete=False, suffix='.pptx')
         output_temp.close()
