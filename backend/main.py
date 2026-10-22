@@ -30,6 +30,8 @@ async def process_files(
     dataFiles: List[UploadFile] = File(...),
     instructions: str = Form(...)
 ):
+    print(f"/process received: pptx={pptxFile.filename}, data files={[f.filename for f in dataFiles]}", flush=True)
+
     pptx_temp = None
     data_temps = []
     output_temp = None

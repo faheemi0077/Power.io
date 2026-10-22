@@ -41,6 +41,7 @@ def apply_instructions(presentation, instruction_objects):
                 f"Slide {slide_number} doesn't exist, the presentation has {len(presentation.slides)} slides"
             )
         chart = generate_chart(presentation, slide_number, inst["chart_type"])
+        print(f"Chart on slide {slide_number}: asking Mistral to clean the data", flush=True)
         clean = interpret_data(inst["dataframe"], chart_type=inst["chart_type"])
         add_data(chart, clean)
         charts.append(chart)
@@ -51,7 +52,7 @@ def apply_instructions(presentation, instruction_objects):
         for chart in charts:
             style_chart(chart, interpretation)
     except Exception as e:
-        print(f"Theme styling skipped: {e}")
+        print(f"Theme styling skipped: {e}", flush=True)
 
     return presentation
 
