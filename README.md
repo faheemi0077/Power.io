@@ -47,11 +47,11 @@ Response:
 - FastAPI
 - pandas
 - python-pptx
-- Mistral AI API
+- Anthropic Claude API (Sonnet 5.5)
 
 ## Project Structure
 
-- `backend/` FastAPI service (deployed on Render). Needs `MISTRAL_API_KEY` set in its environment.
+- `backend/` FastAPI service (deployed on Render). Needs `ANTHROPIC_API_KEY` set in its environment.
 - `frontend/` Next.js app (deployed on Vercel). Set `NEXT_PUBLIC_BACKEND_URL` to the backend URL.
 
 Run locally:

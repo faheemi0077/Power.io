@@ -12,34 +12,68 @@ import json
 import urllib.request
 import urllib.error
 
-MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
+ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
 
-def _mistral_request(req, timeout, attempts=4):
-    """Send a Mistral request, retrying with backoff on rate limits (429) and server errors (5xx)."""
+def _claude_chat(system_prompt, user_prompt, timeout, attempts=4, max_tokens=16000):
+    """Call the Anthropic Messages API and return the reply's text.
+
+    Retries with backoff on rate limits (429), overload (529) and other 5xx errors.
+    Sonnet 5.5 rejects temperature/top_p, so none are sent; max_tokens leaves room for thinking.
+    """
     import time
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY is not set")
+
+    body = json.dumps({
+        "model": CLAUDE_MODEL,
+        "max_tokens": max_tokens,
+        "system": system_prompt,
+        "messages": [{"role": "user", "content": user_prompt}],
+    }).encode("utf-8")
+
     delay = 2.0
     for attempt in range(1, attempts + 1):
+        req = urllib.request.Request(
+            ANTHROPIC_URL,
+            data=body,
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            method="POST",
+        )
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return resp.read().decode("utf-8", errors="replace")
+                data = json.loads(resp.read().decode("utf-8", errors="replace"))
+            break
         except urllib.error.HTTPError as e:
-            body = ""
+            detail = ""
             try:
-                body = e.read().decode("utf-8", errors="replace")[:300]
+                detail = e.read().decode("utf-8", errors="replace")[:300]
             except Exception:
                 pass
             retryable = e.code == 429 or 500 <= e.code < 600
             if not retryable or attempt == attempts:
-                raise RuntimeError(f"HTTP {e.code} from Mistral: {body or e.reason}") from e
+                raise RuntimeError(f"HTTP {e.code} from Anthropic: {detail or e.reason}") from e
             wait = delay
             try:
-                wait = max(wait, float(e.headers.get("Retry-After", 0)))
+                wait = max(wait, float(e.headers.get("retry-after", 0)))
             except (TypeError, ValueError):
                 pass
-            print(f"Mistral returned {e.code}, retry {attempt}/{attempts - 1} in {wait:.0f}s", flush=True)
+            print(f"Anthropic returned {e.code}, retry {attempt}/{attempts - 1} in {wait:.0f}s", flush=True)
             time.sleep(min(wait, 20))
             delay *= 2
+
+    # Replies can open with thinking blocks; only the text blocks hold the answer.
+    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
+    if not text:
+        raise RuntimeError(f"Claude returned no text (stop_reason={data.get('stop_reason')})")
+    return text
 
 
 def _safe_slide_title(slide):
@@ -71,7 +105,7 @@ def apply_instructions(presentation, instruction_objects):
                 f"Slide {slide_number} doesn't exist, the presentation has {len(presentation.slides)} slides"
             )
         chart = generate_chart(presentation, slide_number, inst["chart_type"])
-        print(f"Chart on slide {slide_number}: asking Mistral to clean the data", flush=True)
+        print(f"Chart on slide {slide_number}: asking Claude to clean the data", flush=True)
         clean = interpret_data(inst["dataframe"], chart_type=inst["chart_type"])
         add_data(chart, clean)
         charts.append(chart)
@@ -216,9 +250,9 @@ def interpret_data(dataframe, chart_type):
     except Exception as e:
         raise RuntimeError(f"Failed to serialize dataframe for model: {e}") from e
 
-    api_key = os.getenv("MISTRAL_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        raise RuntimeError("MISTRAL_API_KEY is not set")
+        raise RuntimeError("ANTHROPIC_API_KEY is not set")
 
     system_prompt = "You are a careful data reformatter for charting."
     user_prompt = (
@@ -247,36 +281,10 @@ def interpret_data(dataframe, chart_type):
         "Do not alter category labels unless they clearly represent money ranges."
     )
 
-    req_payload = {
-        "model": MISTRAL_MODEL,
-        "temperature": 0,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    }
-
-    req = urllib.request.Request(
-        "https://api.mistral.ai/v1/chat/completions",
-        data=json.dumps(req_payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        method="POST",
-    )
-
     try:
-        raw = _mistral_request(req, timeout=45)
+        content = _claude_chat(system_prompt, user_prompt, timeout=120)
     except Exception as e:
-        raise RuntimeError(f"Mistral API call failed: {e}") from e
-
-    try:
-        resp_data = json.loads(raw)
-        content = resp_data["choices"][0]["message"]["content"]
-    except Exception as e:
-        raise RuntimeError(f"Unexpected Mistral response format: {e}") from e
+        raise RuntimeError(f"Claude API call failed: {e}") from e
 
     try:
         cleaned = json.loads(_strip_json_fences(content))
@@ -877,7 +885,7 @@ def count_theme(presentation):
 
 def get_interpretation(theme_summary: dict) -> dict:
     """
-    Takes the output of count_theme(theme_summary) and calls the Mistral AI API to infer chart styling intent.
+    Takes the output of count_theme(theme_summary) and calls Claude to infer chart styling intent.
 
     Returns:
       - A strict Python dict matching the required schema.
@@ -974,7 +982,7 @@ def get_interpretation(theme_summary: dict) -> dict:
         except Exception:
             return None
 
-    api_key = os.getenv("MISTRAL_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return fallback
 
@@ -1022,34 +1030,8 @@ def get_interpretation(theme_summary: dict) -> dict:
         "Return ONLY the JSON object."
     )
 
-    payload = {
-        "model": MISTRAL_MODEL,
-        "temperature": 0,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    }
-
-    req = urllib.request.Request(
-        "https://api.mistral.ai/v1/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        method="POST",
-    )
-
     try:
-        raw = _mistral_request(req, timeout=25, attempts=2)
-    except Exception:
-        return fallback
-
-    try:
-        data = json.loads(raw)
-        content = data["choices"][0]["message"]["content"]
+        content = _claude_chat(system_prompt, user_prompt, timeout=90, attempts=2)
     except Exception:
         return fallback
 
@@ -1172,14 +1154,14 @@ def pass_special_instructions(special_instructions: str | None) -> dict | None:
     """
     Interpret raw user special instructions into a strictly validated override schema.
 
-    - Calls the Mistral API (deterministic: temperature=0)
+    - Calls Claude to parse the instructions
     - Returns ONLY the validated override dictionary, or None on any failure/invalidity
     - Does not apply any chart logic/styling and does not reference python-pptx objects
     """
     if special_instructions is None or not str(special_instructions).strip():
         return None
 
-    api_key = os.getenv("MISTRAL_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return None
 
@@ -1276,34 +1258,8 @@ def pass_special_instructions(special_instructions: str | None) -> dict | None:
         "REMEMBER: Output ONLY the JSON object. Nothing else."
     )
 
-    payload = {
-        "model": MISTRAL_MODEL,
-        "temperature": 0,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    }
-
-    req = urllib.request.Request(
-        "https://api.mistral.ai/v1/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        method="POST",
-    )
-
     try:
-        raw = _mistral_request(req, timeout=25, attempts=2)
-    except Exception:
-        return None
-
-    try:
-        data = json.loads(raw)
-        content = data["choices"][0]["message"]["content"]
+        content = _claude_chat(system_prompt, user_prompt, timeout=90, attempts=2)
     except Exception:
         return None
 
