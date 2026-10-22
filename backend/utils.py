@@ -12,6 +12,36 @@ import json
 import urllib.request
 import urllib.error
 
+MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
+
+
+def _mistral_request(req, timeout, attempts=4):
+    """Send a Mistral request, retrying with backoff on rate limits (429) and server errors (5xx)."""
+    import time
+    delay = 2.0
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8", errors="replace")[:300]
+            except Exception:
+                pass
+            retryable = e.code == 429 or 500 <= e.code < 600
+            if not retryable or attempt == attempts:
+                raise RuntimeError(f"HTTP {e.code} from Mistral: {body or e.reason}") from e
+            wait = delay
+            try:
+                wait = max(wait, float(e.headers.get("Retry-After", 0)))
+            except (TypeError, ValueError):
+                pass
+            print(f"Mistral returned {e.code}, retry {attempt}/{attempts - 1} in {wait:.0f}s", flush=True)
+            time.sleep(min(wait, 20))
+            delay *= 2
+
+
 def _safe_slide_title(slide):
     """Return the slide's title shape, or None if it has none."""
     try:
@@ -218,7 +248,7 @@ def interpret_data(dataframe, chart_type):
     )
 
     req_payload = {
-        "model": "mistral-small",
+        "model": MISTRAL_MODEL,
         "temperature": 0,
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -238,8 +268,7 @@ def interpret_data(dataframe, chart_type):
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=45) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
+        raw = _mistral_request(req, timeout=45)
     except Exception as e:
         raise RuntimeError(f"Mistral API call failed: {e}") from e
 
@@ -994,7 +1023,7 @@ def get_interpretation(theme_summary: dict) -> dict:
     )
 
     payload = {
-        "model": "mistral-small",
+        "model": MISTRAL_MODEL,
         "temperature": 0,
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -1014,8 +1043,7 @@ def get_interpretation(theme_summary: dict) -> dict:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
+        raw = _mistral_request(req, timeout=25, attempts=2)
     except Exception:
         return fallback
 
@@ -1249,7 +1277,7 @@ def pass_special_instructions(special_instructions: str | None) -> dict | None:
     )
 
     payload = {
-        "model": "mistral-small",
+        "model": MISTRAL_MODEL,
         "temperature": 0,
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -1269,8 +1297,7 @@ def pass_special_instructions(special_instructions: str | None) -> dict | None:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
+        raw = _mistral_request(req, timeout=25, attempts=2)
     except Exception:
         return None
 
