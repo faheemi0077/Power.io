@@ -1,62 +1,69 @@
-# PowerIO – AI Powered PowerPoint Chart Generator
+# Power.io
 
-PowerIO is an API that automatically generates charts in PowerPoint slides from raw data files.
+Power.io takes a CSV or Excel file and turns it into a chart inside your existing PowerPoint deck, styled to match the rest of the presentation.
 
-The system accepts a PowerPoint template and one or more data files (CSV or Excel), interprets the data using a language model, and inserts properly formatted charts into the specified slides.
+## Why I built it
 
-The goal is to automate the process of turning raw data into presentation-ready charts.
+My cousin at Harvard was getting tired of building and formatting PowerPoint charts all the time for his business consulting organization. I wanted to make it as easy as possible: he only gives the basics (chart type, which slide, and where the data comes from) and gets back a finished deck.
 
-## Features
+## What I built
 
-- PowerPoint chart generation via API
-- Support for CSV and Excel data files
-- Automatic data interpretation using an LLM
-- Chart insertion into existing slide templates
-- Chart styling that adapts to the presentation theme
-- REST API built with FastAPI
+I built and orchestrated the main logic: what charts get built, when, and how they get placed and styled. The backend reads the data, builds each chart with python-pptx, then has an LLM decide which theme fits the chart based on the rest of the presentation.
 
-## How It Works
+I designed the frontend in Vercel v0 and handed off the wiring between it and the backend to a coding agent.
 
-1. A PowerPoint template is uploaded.
-2. Data files are uploaded (CSV or Excel).
-3. Instructions specify:
-   - chart type
-   - slide number
-4. The system loads the data into pandas DataFrames.
-5. The data is interpreted and formatted for charting.
-6. A chart is generated and inserted into the PowerPoint slide.
-7. The modified PowerPoint file is returned to the user.
+## The hardest part
 
-## API Endpoint
+Getting the charts to cooperate with the theme decisions I was hardcoding. Fixed rules kept clashing with decks that didn't fit them. It only worked after I added an LLM judge on the fly: the backend now measures the deck's fonts, colors and slide types, and the model picks the chart's styling from that summary.
 
-POST `/process`
+## How to use it
 
-Request includes:
+1. Upload your .pptx file.
+2. For each chart, pick a chart type, a slide number and a data file (CSV or Excel).
+3. Download the updated deck.
 
-- PowerPoint template file
-- One or more data files
-- Chart instructions
+Supported chart types: column, bar, line and area (each with stacked and 100% stacked versions), pie, donut and scatter.
 
-Response:
+## Stack
 
-- A generated PowerPoint file with charts inserted.
+- Backend: Python, FastAPI, pandas, python-pptx, Claude API. Deployed on Render.
+- Frontend: Next.js. Deployed on Vercel.
 
-## Technologies Used
+## Run it locally
 
-- Python
-- FastAPI
-- pandas
-- python-pptx
-- Anthropic Claude API (Sonnet 5.5)
-
-## Project Structure
-
-- `backend/` FastAPI service (deployed on Render). Needs `ANTHROPIC_API_KEY` set in its environment.
-- `frontend/` Next.js app (deployed on Vercel). Set `NEXT_PUBLIC_BACKEND_URL` to the backend URL.
-
-Run locally:
+Backend:
 
 ```
-cd backend && pip install -r requirements.txt && uvicorn main:app --reload
-cd frontend && pnpm install && pnpm dev
+cd backend
+pip install -r requirements.txt
+export ANTHROPIC_API_KEY=your_key
+uvicorn main:app --reload
+```
+
+`CLAUDE_MODEL` is optional and defaults to `claude-sonnet-5-5`.
+
+Frontend:
+
+```
+cd frontend
+echo "NEXT_PUBLIC_BACKEND_URL=http://localhost:8000" > .env.local
+pnpm install
+pnpm dev
+```
+
+## API
+
+`POST /process` takes a multipart form with:
+
+- `pptxFile`: the deck
+- `dataFiles`: one data file per chart, in the same order as the instructions
+- `instructions`: a JSON list like `[{"chart_type": "line", "slide_number": 3}]`
+
+It returns the edited .pptx.
+
+## Project structure
+
+```
+backend/    FastAPI service (main.py routes, utils.py chart and theme logic)
+frontend/   Next.js app
 ```
