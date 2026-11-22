@@ -2,6 +2,8 @@
 
 Power.io takes a CSV or Excel file and turns it into a chart inside your existing PowerPoint deck, styled to match the rest of the presentation.
 
+**Live demo:** https://powerio.vercel.app/
+
 ## What it was built for
 
 My cousin at Harvard was getting tired of building and formatting PowerPoint charts all the time for his business consulting organization. I wanted to make it as easy as possible where the user only gives the basics (chart type, which slide, and where the data comes from) and gets back a finished deck.
