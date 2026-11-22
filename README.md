@@ -2,19 +2,19 @@
 
 Power.io takes a CSV or Excel file and turns it into a chart inside your existing PowerPoint deck, styled to match the rest of the presentation.
 
-## Why I built it
+## What it was built for
 
-My cousin at Harvard was getting tired of building and formatting PowerPoint charts all the time for his business consulting organization. I wanted to make it as easy as possible: he only gives the basics (chart type, which slide, and where the data comes from) and gets back a finished deck.
+My cousin at Harvard was getting tired of building and formatting PowerPoint charts all the time for his business consulting organization. I wanted to make it as easy as possible where the user only gives the basics (chart type, which slide, and where the data comes from) and gets back a finished deck.
 
 ## What I built
 
-I built and orchestrated the main logic: what charts get built, when, and how they get placed and styled. The backend reads the data, builds each chart with python-pptx, then has an LLM decide which theme fits the chart based on the rest of the presentation.
+I built and orchestrated the main logic for what charts get built, when, and how they get placed and styled. The backend reads the data, builds each chart with python-pptx, then has an LLM decide which theme fits the chart based on the rest of the presentation.
 
-I designed the frontend in Vercel v0 and handed off the wiring between it and the backend to a coding agent.
+I designed the frontend in Vercel v0 and handed off the wiring between it and the backend to a code agent.
 
 ## The hardest part
 
-Getting the charts to cooperate with the theme decisions I was hardcoding. Fixed rules kept clashing with decks that didn't fit them. It only worked after I added an LLM judge on the fly: the backend now measures the deck's fonts, colors and slide types, and the model picks the chart's styling from that summary.
+Getting the charts to cooperate with the theme decisions I was hardcoding. Fixed rules kept clashing with decks that didn't fit them. It only worked after I added an LLM judge on the fly which allows the backend to measure the deck's fonts, colors and slide types, and the model picks the chart's styling from that summary.
 
 ## How to use it
 
